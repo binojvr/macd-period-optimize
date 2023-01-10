@@ -1,17 +1,47 @@
 import pandas as pd
-import pandas_ta as ta
 import yfinance as yf
-import mplfinance as mpf
+import numpy as np
 
-df = yf.Ticker('AAPL').history(period="1d", interval="5m")
+data = yf.Ticker('AAPL').history(period="1d", interval="5m")
+# data.assign('id' = lambda x: range(1, len(x))
+data.insert(0, 'id', range(1, 1 + len(data)))
+data.index = data['id']
 
-df.ta.macd(close='close', fast=12, slow=26, signal=9, append=True)
-df = df.rename(columns={'MACD_12_26_9': 'MACD'}).rename(columns={'MACDs_12_26_9': 'Signal'}).rename(columns={'MACDh_12_26_9': 'Histogram'})
+# Create a list of the different combinations of MACD parameters to test
+parameters = [(12, 26, 9), (10, 20, 5), (15, 30, 10), (20, 50, 15)]
 
-macd_line  = [
-   mpf.make_addplot(df['MACD'], panel=2, color='blue', width=0.7),
-    mpf.make_addplot(df['Signal'], panel=2, color='lime', width=0.7, secondary_y = False),
-    mpf.make_addplot(df['Histogram'], type='bar',width=0.7,panel=2, color='#6E6E6E', secondary_y = False)
-]
-setup = dict(type='candle', volume=True, datetime_format='%Y/%m/%d', figsize=(9,5), style=cs, xrotation=False, ylabel='', ylabel_lower='')
-mpf.plot(df, **setup,scale_width_adjustment=dict(volume=0.6), addplot=macd_line)
+# Initialize a dictionary to store the results of the backtest for each parameter combination
+results = {}
+
+# Iterate over each parameter combination
+for params in parameters:
+    # Extract the individual parameter values
+    fast_period, slow_period, signal_period = params
+    # Calculate the MACD and signal line for each day using the given parameters
+    data['macd'] = data['Close'].ewm(span=fast_period).mean() - data['Close'].ewm(span=slow_period).mean()
+    data['signal'] = data['macd'].ewm(span=signal_period).mean()
+
+    # Initialize a variable to store the total profit made using this parameter combination
+    total_profit = buy_price = sell_price = profit = 0
+
+    # Iterate over each day in the data
+    for i in range(1, len(data)):
+        # If the MACD crosses above the signal line, buy the security
+        if data.loc[i, 'macd'] > data.loc[i, 'signal'] and data.loc[i - 1, 'macd'] <= data.loc[i - 1, 'signal']:
+            buy_price = data.loc[i, 'Close']
+
+        # If the MACD crosses below the signal line, sell the security
+        elif data.loc[i, 'macd'] < data.loc[i, 'signal'] and data.loc[i - 1, 'macd'] >= data.loc[i - 1, 'signal']:
+            sell_price = data.loc[i, 'Close']
+            profit = sell_price - buy_price
+            total_profit += profit
+
+    # Store the total profit made using this parameter combination in the results dictionary
+    results[params] = total_profit
+
+# Find the parameter combination that resulted in the highest total profit
+best_params = max(results, key=results.get)
+
+# Print the best parameters and the corresponding total profit
+print("Best parameters:", best_params)
+print("Total profit:", results[best_params])
